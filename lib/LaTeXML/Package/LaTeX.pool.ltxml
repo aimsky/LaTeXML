@@ -3640,12 +3640,16 @@ sub after_picture {
 
 # Since these ultimately generate external resources, it can be useful to have a handle on them.
 Tag('ltx:graphics', afterOpen => sub { GenerateID(@_, 'g'); });
-Tag('ltx:picture',  afterOpen => sub { GenerateID(@_, 'pic'); });
-
 # Ugh... Is this safe?  Apparently, picture stuff is allowed w/o a {picture} environment???
-### Tag('ltx:picture', autoOpen=>1, autoClose=>1);
-### Actually, NO! It triggers a deep recursion
-### NOTE: This needs to be researched!!!
+Tag('ltx:picture', autoOpen => 0.5, autoClose => 1,
+  afterOpen => sub { GenerateID(@_, 'pic'); },
+  afterClose => sub {
+    my ($document, $node, $whatsit) = @_;
+    # Make sure we get a size, in case autoOpen'd
+    if ($whatsit) {
+      my ($w, $h, $d) = $whatsit->getSize;
+      $node->setAttribute(width  => $w->toAttribute)          unless $node->hasAttribute('width');
+      $node->setAttribute(height => $h->add($d)->toAttribute) unless $node->hasAttribute('height'); } });
 
 # Note: Untex should prefix a setting of unitlength!!!
 # First pair is (width,height)
@@ -3940,6 +3944,13 @@ DefPrimitive('\mathversion{}', sub {
     elsif ($version eq 'normal') {
       AssignValue(mathfont => LookupValue('mathfont')->merge(forcebold => 0), 'local'); }
     else { Error('unexpected', $version, $stomach, "Unknown math verison '$version'"); } });
+
+DefPrimitive('\DeclareOldFontCommand{}{}{}', sub {
+    my ($stomach, $cmd, $font, $mathcmd) = @_;
+    DefMacroI($cmd, undef, sub {
+        return (LookupValue('IN_MATH') ? $mathcmd->unlist : $font->unlist); });
+    #      Tokens(T_CS('\ifmmode'), $mathcmd->unlist, T_CS('\else'), $font->unlist, T_CS('\fi')));
+    return; });
 
 DefMacro('\newfont{}{}', '\font#1=#2\relax');
 
@@ -4456,6 +4467,7 @@ RawTeX(<<'EOTeX');
 \newif\if@noitemarg \@noitemargfalse
 \newif\if@nmbrlist  \@nmbrlistfalse
 
+\def\glb@settings{}%
 EOTeX
 
 DefMacroI('\@height', undef, 'height');
@@ -4586,8 +4598,8 @@ DefMacro('\newlabel{}{}',       Tokens());
 
 DefMacroI('\stop', undef, sub { $_[0]->closeMouth(1); return; });
 DefMacroI('\ignorespacesafterend', undef, Tokens());
-DefMacroI('\mathgroup',            undef, Tokens());
-DefMacroI('\mathalpha',            undef, Tokens());
+Let('\mathgroup', '\fam');
+Let('\mathalpha', '\relax');
 
 #\def\mathhexbox#1#2#3{\mbox{$\m@th \mathchar"#1#2#3$}}
 DefPrimitive('\mathhexbox {}{}{}', sub {

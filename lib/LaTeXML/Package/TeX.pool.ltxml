@@ -327,7 +327,11 @@ DefParameterType('Register', sub {
     else {
       Error('expected', '<register>', $gullet,
         "A <register> was supposed to be here", "Got " . Stringify($token));
-      undef; } },
+      if (isDefinable($token)) {
+        DefRegisterI($token, undef, Tokens());
+        return [$defn]; }
+      else {
+        return; } } },
   reversion => sub {
     my ($var) = @_;
     my ($defn, @args) = @$var;
@@ -588,6 +592,7 @@ DefMacro('\@ifundefined{}{}{}', sub {
 
 sub isDefinable {
   my ($token) = @_;
+  return unless $token;
   my $meaning = LookupMeaning($token);
   my $name = $token->getString; $name =~ s/^\\//;
   return (((!defined $meaning) || ($meaning eq LookupMeaning(T_CS('\relax'))))
@@ -674,7 +679,18 @@ Let('\protect', '\relax');
 #======================================================================
 
 DefMacro('\romannumeral Number', sub { roman($_[1]->valueOf); });
-DefMacro('\string Token',        sub { ExplodeText($_[1]->getString); });
+#DefMacro('\string Token',        sub { ExplodeText($_[1]->getString); });
+# Hmm... I wonder, should getString itself be dealing with escapechar?
+sub escapechar {
+  my $code = LookupRegister('\escapechar')->valueOf;
+  return (($code >= 0) && ($code <= 255) ? chr($code) : ''); }
+
+DefMacro('\string Token', sub {
+    my $s = $_[1]->getString;
+    if ($s =~ s/^\\//) {
+      $s = escapechar() . $s; }
+    ExplodeText($s); });
+
 DefMacroI('\jobname', undef, Tokens());    # Set to the filename by initialization
 
 DefMacroI('\fontname', undef, sub { Explode("fontname not implemented"); });
@@ -736,9 +752,8 @@ DefMacro('\meaning Token', sub {
 
 DefParameterType('CSName', sub {
     my ($gullet) = @_;
-##    my ($token, @toks) = ();
     my $token;
-    my $cs = '\\';
+    my $cs = escapechar();
     my $s;
     # keep newlines from having \n inside!
     while (($token = $gullet->readXToken(0)) && (($s = $token->getString) ne '\endcsname')) {
@@ -750,9 +765,7 @@ DefParameterType('CSName', sub {
         else {
           Error('undefined', $token, $gullet, "The token " . Stringify($token) . " is not defined"); } }
       # Keep newlines from having \n!
-##      push(@toks, ($cc == CC_SPACE ? T_SPACE : $token)); }
       $cs .= ($cc == CC_SPACE ? ' ' : $s); }
-##    T_CS("\\" . ToString(Tokens(@toks))); });
     T_CS($cs); });
 
 DefMacro('\csname CSName', sub {
@@ -769,7 +782,7 @@ DefPrimitive('\endcsname', sub {
 DefMacro('\expandafter Token Token', sub {
     my ($gullet, $tok, $xtok) = @_;
     my $defn;
-    if (defined($defn = LookupDefinition($xtok)) && $defn->isExpandable) {
+    if (defined($defn = $STATE->lookupExpandable($xtok))) {
       # Note that IF expandafter ends up expanding a \the in an \edef,
       # that it Overrides the implicit noexpand that \edef would normally use for\the!!
       local $LaTeXML::NOEXPAND_THE = undef;
@@ -849,7 +862,7 @@ DefRegister('\tracingcommands', Number(0),
     tracinglostchars => 1,
     tracingrestores  => 0, language => 0, uchyph => 1, lefthyphenmin => 0,
     righthyphenmin   => 0, globaldefs => 0, defaulthyphenchar => ord('-'), defaultskewchar => -1,
-    escapechar       => 0, endlinechar => 0, newlinechar => -1, maxdeadcycles => 0, hangafter => 0,
+    escapechar => ord('\\'), endlinechar => 0, newlinechar => -1, maxdeadcycles => 0, hangafter => 0,
     fam  => -1, mag => 1000, magnification => 1000, delimiterfactor => 0,
     time => 0,  day => 0,    month         => 0,    year            => 0,
     showboxbreadth => 5, showboxdepth => 3, errorcontextlines => 5);
@@ -3125,7 +3138,7 @@ sub cleanup_XMText {
     my $child = $children[0];
     $document->setNodeFont($textnode, $document->getNodeFont($child));
     foreach my $attr ($child->attributes) {    # Copy the child's attributes (should Merge!!)
-      $textnode->setAttribute($attr->nodeName => $attr->getValue); }
+      $textnode->setAttribute($attr->nodeName => $attr->getValue) unless $attr->nodeName eq 'xml:id'; }
     $document->unwrapNodes($child); }
 
   # Now apply a simplifying rule for nested Math
@@ -3173,7 +3186,12 @@ sub cleanup_XMText {
             $document->wrapNodes('ltx:XMText', $m); }
         } } }
     # And now we don't need the XMText any more.
-    $document->unwrapNodes($textnode); }
+    foreach my $attr ($textnode->attributes) {    # Copy the child's attributes (should Merge!!)
+      $table->setAttribute($attr->nodeName => $attr->getValue); }
+    my $newtable = $document->unwrapNodes($textnode);
+    if (my $id = $textnode->getAttribute('xml:id')) {
+      $document->unRecordID($id);
+      $document->recordID($id, $newtable); } }
   return; }
 
 #**********************************************************************
@@ -4836,9 +4854,9 @@ DefConstructorI('\@math@italiccorr', undef,
 DefPrimitiveI('\@text@italiccorr', undef, "", alias => '\/');
 
 # What kind of magic might allow \mskip to translate these back into the above?
-DefMacroI('\thinmuskip',  undef, "3 mu");
-DefMacroI('\medmuskip',   undef, "4mu plus 2mu minus 4mu");
-DefMacroI('\thickmuskip', undef, "5mu plus 5mu");
+DefRegister('\thinmuskip'  => MuGlue("3mu"));
+DefRegister('\medmuskip'   => MuGlue("4mu plus 2mu minus 4mu"));
+DefRegister('\thickmuskip' => MuGlue("5mu plus 5mu"));
 
 #======================================================================
 # TeX Book, Appendix B. p. 358
@@ -6023,12 +6041,13 @@ DefLigature(qr{---}, "\x{2014}",
 # Ligatures for doubled single left & right quotes to convert to double quotes
 # [should ligatures be part of a font, in the first place? (it is in TeX!)
 DefLigature(qr{\x{2018}\x{2018}}, "\x{201C}",
-  fontTest => sub { ($_[0]->getFamily ne 'typewriter') && (($_[0]->getEncoding || 'OT1') eq 'OT1'); });
+  fontTest => sub { ($_[0]->getFamily ne 'typewriter')
+      && (($_[0]->getEncoding || 'OT1') =~ /^(OT1|T1)$/); });    # is this needed?
 DefLigature(qr{\x{2019}\x{2019}}, "\x{201D}",
-  fontTest => sub { ($_[0]->getFamily ne 'typewriter') && (($_[0]->getEncoding || 'OT1') eq 'OT1'); });
-
+  fontTest => sub { ($_[0]->getFamily ne 'typewriter')
+      && (($_[0]->getEncoding || 'OT1') =~ /^(OT1|T1)$/); });
 DefPrimitiveI('\TeX', undef, 'TeX');
-DefPrimitiveI('\i',   undef, "\x{0131}");    # LATIN SMALL LETTER DOTLESS I
+DefPrimitiveI('\i',   undef, "\x{0131}");                        # LATIN SMALL LETTER DOTLESS I
 DefPrimitiveI('\j',   undef, "\x{0237}");
 
 DefConstructor('\buildrel Until:\over {}',
@@ -6140,6 +6159,9 @@ DefConstructor('\@PADDED[MuDimension]{MuDimension}{}',
   afterConstruct => sub {
     my ($document, $whatsit) = @_;
     my $node = $document->getLastChildElement($document->getNode);
+    if ($document->getNodeQName($node) eq 'ltx:XMDual') {
+      my (@ch) = $node->childNodes;
+      $node = $ch[1]; }
     if (my $lpadding = $whatsit->getArg(1)) {
       $document->setAttribute($node, lpadding => $lpadding); }
     if (my $rpadding = $whatsit->getArg(2)) {

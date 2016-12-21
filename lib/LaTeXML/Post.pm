@@ -1250,14 +1250,14 @@ sub trimChildNodes {
   elsif (!ref $node) {
     return ($node); }
   elsif (my @children = $node->childNodes) {
-    if ($children[0]->nodeType == XML_TEXT_NODE) {
+    if ($children[0] && $children[0]->nodeType == XML_TEXT_NODE) {
       my $s = $children[0]->data;
       $s =~ s/^\s+//;
       if ($s) {
         $children[0]->setData($s); }
       else {
         shift(@children); } }
-    if ($children[-1]->nodeType == XML_TEXT_NODE) {
+    if ($children[-1] && $children[-1]->nodeType == XML_TEXT_NODE) {
       my $s = $children[-1]->data;
       $s =~ s/\s+$//;
       if ($s) {
@@ -1394,11 +1394,13 @@ sub adjust_latexml_doctype {
 sub cacheLookup {
   my ($self, $key) = @_;
   $self->openCache;
+  $key = Encode::encode_utf8($key) if $key;
   return $$self{cache}{$key}; }
 
 sub cacheStore {
   my ($self, $key, $value) = @_;
   $self->openCache;
+  $key = Encode::encode_utf8($key) if $key;
   if (defined $value) {
     $$self{cache}{$key} = $value; }
   else {
