@@ -21,6 +21,8 @@
     extension-element-prefixes="func f"
     exclude-result-prefixes = "ltx func f">
 
+  <xsl:param name="SIMPLIFY_HTML"></xsl:param>
+
   <!-- ======================================================================
        Various Block-level elements:
        ltx:p, ltx:equation, ltx:equationgroup, ltx:quote, ltx:block,
@@ -32,6 +34,7 @@
        a valid 'span' element instead.
        See the CONTEXT discussion in LaTeXML-common -->
 
+  <xsl:preserve-space elements="ltx:p"/>
   <xsl:template match="ltx:p">
     <xsl:param name="context"/>
     <xsl:text>&#x0A;</xsl:text>
@@ -117,7 +120,7 @@
 
   <xsl:template match="ltx:listing" mode="classes">
     <xsl:param name="context"/>
-    <xsl:apply-imports/>
+    <xsl:apply-templates select="." mode="base-classes"/>
     <xsl:text> ltx_listing</xsl:text>
   </xsl:template>
 
@@ -135,6 +138,7 @@
   </xsl:template>
 
 
+  <xsl:preserve-space elements="ltx:listingline"/>
   <xsl:template match="ltx:listingline">
     <xsl:param name="context"/>
     <xsl:text>&#x0A;</xsl:text>
@@ -1064,6 +1068,21 @@ ancestor-or-self::ltx:equationgroup[position()=1][@refnum]/descendant::ltx:equat
     <xsl:param name="context"/>
     <xsl:text>&#x0A;</xsl:text>
     <xsl:choose>
+      <xsl:when test="$SIMPLIFY_HTML">
+        <xsl:element name="{f:blockelement($context,'li')}" namespace="{$html_ns}">
+          <xsl:call-template name="add_id"/>
+          <xsl:call-template name="add_attributes"/>
+          <xsl:apply-templates select="." mode="begin">
+            <xsl:with-param name="context" select="$context"/>
+          </xsl:apply-templates>
+          <xsl:apply-templates select="*[local-name() != 'tag']">
+            <xsl:with-param name="context" select="$context"/>
+          </xsl:apply-templates>
+          <xsl:apply-templates select="." mode="end">
+            <xsl:with-param name="context" select="$context"/>
+          </xsl:apply-templates>
+        </xsl:element>
+      </xsl:when>
       <xsl:when test="child::ltx:tag">
         <xsl:element name="{f:blockelement($context,'li')}" namespace="{$html_ns}">
           <xsl:call-template name="add_id"/>
@@ -1179,7 +1198,7 @@ ancestor-or-self::ltx:equationgroup[position()=1][@refnum]/descendant::ltx:equat
        so it's the GRANDPARENT's type we want to use here!-->
   <xsl:template match="ltx:tag" mode="classes">
     <xsl:param name="context"/>
-    <xsl:apply-imports/>
+    <xsl:apply-templates select="." mode="base-classes"/>
     <xsl:text> </xsl:text>
     <xsl:value-of select="concat('ltx_tag_',local-name(../..))"/>
   </xsl:template>

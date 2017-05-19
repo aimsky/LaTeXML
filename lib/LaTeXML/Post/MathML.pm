@@ -809,7 +809,7 @@ sub stylizeContent {
   if ($variant
     && ($plane1 || $plane1hack)
     && ($mapping = ($plane1hack ? $plane1hack{$variant} : $plane1map{$variant}))) {
-    my @c = map { $$mapping{$_} } split(//, $text || '');
+    my @c = map { $$mapping{$_} } split(//, (defined $text ? $text : ''));
     if (!grep { !defined $_ } @c) {    # Only if ALL chars in the token could be mapped... ?????
       $text = join('', @c);
       $variant = ($plane1hack && ($variant =~ /^bold/) ? 'bold' : undef); } }
@@ -1184,12 +1184,19 @@ sub cmml_contents {
 
 sub cmml_unparsed {
   my (@nodes) = @_;
+  my @results = ();
+  foreach my $node (@nodes) {
+    # Deal with random, unknown symbols, but still record association.
+    if ((getQName($node) eq 'ltx:XMTok')
+      && (($node->getAttribute('role') || 'UNKNOWN') eq 'UNKNOWN')) {
+      my $result = ['m:csymbol', { cd => 'unknown' }, $node->textContent];
+      $LaTeXML::Post::MATHPROCESSOR->associateNode($result, $node);
+      push(@results, $result); }
+    else {
+      push(@results, cmml($node)); } }
   return ['m:cerror', {},
     ['m:csymbol', { cd => 'ambiguous' }, 'fragments'],
-    map { ((getQName($_) eq 'ltx:XMTok') && (($_->getAttribute('role') || 'UNKNOWN') eq 'UNKNOWN')
-        ? ['m:csymbol', { cd => 'unknown' }, $_->textContent]
-        : cmml($_)) }
-      @nodes]; }
+    @results]; }
 
 # Or csymbol if there's some kind of "defining" attribute?
 sub cmml_ci {

@@ -430,7 +430,11 @@ sub filter_hints {
       if (my $id = $node->getAttribute('xml:id')) {
         if ($document->findnodes("descendant-or-self::ltx:XMRef[\@idref='$id']")) {
           push(@prefiltered, $node); $prev = $node; } } }
-    else {    # Some other element.
+    # Don't store stuff on APPLYOP, since they tend to disappear.
+    elsif ((getQName($node) eq 'ltx:XMTok') && (($node->getAttribute('role') || '') eq 'APPLYOP')) {
+###      push(@prefiltered, $node); $prev = $node; }    # Keep it.
+      push(@prefiltered, $node); }    # Keep it, but don't step $prev
+    else {                            # Some other element.
       if ($pending_comments) {
         $node->setAttribute(_pre_comment => $pending_comments);
         $pending_comments = ''; }
@@ -440,6 +444,7 @@ sub filter_hints {
         $pending_space = 0.0; }
       push(@prefiltered, $node); $prev = $node; }    # Keep it.
   }
+  # if $pending_space > 0, should store as rpadding on last element?
   my @filtered = ();
   # Filter through the pre-filtered nodes looking for large rpadding.
   foreach my $node (@prefiltered) {
