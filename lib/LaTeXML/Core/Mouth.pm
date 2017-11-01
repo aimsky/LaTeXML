@@ -222,7 +222,7 @@ sub handle_space {
   my ($self) = @_;
   my ($ch, $cc);
   # Skip any following spaces!
-  while ((($ch, $cc) = getNextChar($self)) && $ch && (($cc == CC_SPACE) || ($cc == CC_EOL))) { }
+  while ((($ch, $cc) = getNextChar($self)) && (defined $ch) && (($cc == CC_SPACE) || ($cc == CC_EOL))) { }
   $$self{colno}-- if ($$self{colno} < $$self{nchars});
   return T_SPACE; }
 
@@ -279,6 +279,7 @@ sub readToken {
       $$self{colno} = 0;
       my $line = $self->getNextLine;
       if (!defined $line) {    # Exhausted the input.
+        $$self{at_eof} = 1;
         $$self{chars}  = [];
         $$self{nchars} = 0;
         return; }
@@ -300,6 +301,7 @@ sub readToken {
     my $token = (defined $cc ? $DISPATCH[$cc] : undef);
     $token = &$token($self, $ch) if ref $token eq 'CODE';
     return $token if defined $token;    # Else, repeat till we get something or run out.
+
   }
   return; }
 
@@ -335,6 +337,7 @@ sub readRawLine {
   else {
     $line = $self->getNextLine;
     if (!defined $line) {
+      $$self{at_eof} = 1;
       $$self{chars} = []; $$self{nchars} = 0; $$self{colno} = 0; }
     else {
       $$self{lineno}++;

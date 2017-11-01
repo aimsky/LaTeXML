@@ -47,6 +47,7 @@ AssignValue(inPreamble => 1);    # \begin{document} will clear this.
 
 DefConstructor('\documentclass OptionalSemiverbatim SkipSpaces Semiverbatim []',
   "<?latexml class='#2' ?#1(options='#1')?>",
+  beforeDigest => sub { onlyPreamble('\documentclass'); },
   afterDigest => sub {
     my ($stomach, $whatsit) = @_;
     my $options = $whatsit->getArg(1);
@@ -66,7 +67,8 @@ DefConstructor('\documentstyle OptionalSemiverbatim SkipSpaces Semiverbatim []',
   "<?latexml class='#2' ?#1(options='#1') oldstyle='true'?>",
   beforeDigest => sub {
     Info('unexpected', '\documentstyle', $_[0], "Entering LaTeX 2.09 Compatibility mode");
-    AssignValue('2.09_COMPATIBILITY' => 1, 'global'); },
+    AssignValue('2.09_COMPATIBILITY' => 1, 'global');
+    onlyPreamble('\documentstyle'); },
   afterDigest => sub {
     my ($stomach, $whatsit) = @_;
     my $class   = ToString($whatsit->getArg(2));
@@ -325,7 +327,8 @@ DefMacroI('\fmtversion', undef, 'XXXX/XX/XX');
 
 DefMacroI('\today', undef, sub { ExplodeText(today()); });
 
-DefConstructor('\emph{}', "<ltx:emph>#1</ltx:emph>", mode => 'text');
+DefConstructor('\emph{}', "<ltx:emph _force_font='1'>#1</ltx:emph>",
+  mode => 'text', bounded => 1, font => { emph => 1 });
 
 #======================================================================
 # C.3.2 Making Paragraphs
@@ -566,8 +569,9 @@ DefRegister('\mathindent'    => Dimension(0));
 
 DefMacroI('\@clsextension', undef, 'cls');
 DefMacroI('\@pkgextension', undef, 'sty');
-Let('\@currext',  '\@empty');
-Let('\@currname', '\@empty');
+Let('\@currext',          '\@empty');
+Let('\@currname',         '\@empty');
+Let('\@classoptionslist', '\relax');
 
 DefConstructor('\usepackage OptionalSemiverbatim Semiverbatim []',
   "<?latexml package='#2' ?#1(options='#1')?>",
@@ -1111,7 +1115,7 @@ sub setEnumerationStyle {
       elsif (Equals($t, T_LETTER('i'))) {
         DefMacroI('\theenum' . $level, undef, Invocation(T_CS('\roman'), $ctr));
         push(@out, T_CS('\theenum' . $level)); }
-      elsif (Equals($t, T_LETTER('1'))) {
+      elsif (Equals($t, T_OTHER('1'))) {
         DefMacroI('\theenum' . $level, undef, Invocation(T_CS('\arabic'), $ctr));
         push(@out, T_CS('\theenum' . $level)); }
       else {
@@ -1800,7 +1804,8 @@ DefConstructor('\frac InFractionStyle InFractionStyle',
 #======================================================================-
 # All this is already in TeX.pool
 
-DefConstructor('\stackrel{}{}',
+DefMacro('\stackrel{}{}', '\lx@stackrel{{\scriptstyle #1}}{{#2}}');
+DefConstructor('\lx@stackrel{}{}',
   "<ltx:XMApp role='RELOP'>"
     . "<ltx:XMTok role='SUPERSCRIPTOP' scriptpos='#scriptpos'/>"
     . "<ltx:XMArg>#2</ltx:XMArg>"
@@ -3004,7 +3009,7 @@ DefPrimitive('\includeonly{}', sub {
     $paths = ToString($paths);
     my $table = LookupValue('including@only');
     AssignValue('including@only', $table = {}, 'global') unless $table;
-    map { $$table{$_} = 1 } split(/,\s*/, $paths);
+    map { $$table{$_} = 1 } map { /^\s*(.*?)\s*$/ && $1; } split(/,/, $paths);
     return; });
 
 # NOTE: In the long run, we want to SAVE the contents and associate them with the given file name
@@ -3293,9 +3298,12 @@ DefMacro('\stretch{}', '0pt plus #1fill\relax');
 DefPrimitive('\@check@length DefToken', sub {
     my ($stomach, $cs) = @_;
     my $defn = LookupDefinition($cs);
-    if (!$defn || !$defn->isRegister) {
+    if (!$defn) {
       Warn('undefined', $cs, $stomach, "'" . ToString($cs) . "' is not a length; defining it now");
       DefRegisterI($cs, undef, Dimension(0)); }
+    elsif (!$defn->isRegister) {
+      Error('misdefined', $cs, $stomach, "'" . ToString($cs) . "' length was expected, got ".ref($defn)." instead of register.");
+    }
     return; });
 
 DefPrimitive('\newlength DefToken', sub {
@@ -3475,6 +3483,7 @@ DefConstructor('\parbox[][Dimension][]{Dimension}{}', sub {
   beforeDigest => sub {
     AssignValue('\hsize' => $_[4]);
     Let('\\\\', '\par'); });
+DefMacroI('\@parboxrestore', undef, Tokens());
 
 DefConditional('\if@minipage');
 DefEnvironment('{minipage}[][][]{Dimension}', sub {
@@ -4181,7 +4190,7 @@ sub make_message {
 
 DefPrimitive('\@onlypreamble{}', sub { onlyPreamble('\@onlypreamble'); }); # Don't bother enforcing this.
 DefPrimitive('\GenericError{}{}{}{}', sub { Error(make_message('\GenericError', $_[2], $_[3], $_[4])); });
-DefPrimitive('\GenericWarning{}{}', sub { Warn(make_message('\GenericWarning', $_[2], $_[3])); });
+DefPrimitive('\GenericWarning{}{}', sub { Warn(make_message('\GenericWarning', $_[1], $_[2])); });
 DefPrimitive('\GenericInfo{}{}',    sub { Info(make_message('\GenericInfo',    $_[1], $_[2])); });
 
 Let('\MessageBreak', '\relax');
@@ -4311,77 +4320,77 @@ RawTeX(<<'EOTeX');
   \iterate
   \let\iterate\relax
 }
-\newdimen\@ydim 							
+\newdimen\@ydim
 \let\@@hyph=\-
-\newbox\@arstrutbox							
-\newbox\@begindvibox							
-\newcount\@botnum							
-\newdimen\@botroom							 
-\newcount\@chclass							 
-\newcount\@chnum							
-\newdimen\@clnht							
-\newdimen\@clnwd							
-\newdimen\@colht							
-\newcount\@colnum							 
-\newdimen\@colroom							
-\newbox\@curfield							 
-\newbox\@curline							 
-\newcount\@currtype							 
-\newcount\@curtab							 
-\newcount\@curtabmar							
-\newbox\@dashbox							
-\newcount\@dashcnt							 
-\newdimen\@dashdim							 
-\newcount\@dbltopnum							
-\newdimen\@dbltoproom							
+\newbox\@arstrutbox
+\newbox\@begindvibox
+\newcount\@botnum
+\newdimen\@botroom
+\newcount\@chclass
+\newcount\@chnum
+\newdimen\@clnht
+\newdimen\@clnwd
+\newdimen\@colht
+\newcount\@colnum
+\newdimen\@colroom
+\newbox\@curfield
+\newbox\@curline
+\newcount\@currtype
+\newcount\@curtab
+\newcount\@curtabmar
+\newbox\@dashbox
+\newcount\@dashcnt
+\newdimen\@dashdim
+\newcount\@dbltopnum
+\newdimen\@dbltoproom
 \let\@dischyph=\-
-\newcount\@enumdepth 
-\newcount\@floatpenalty							
-\newdimen\@fpmin							
-\newcount \@fpstype							
-\newcount\@highpenalty							
-\newcount\@hightab							
-\newbox\@holdpg								
+\newcount\@enumdepth
+\newcount\@floatpenalty
+\newdimen\@fpmin
+\newcount \@fpstype
+\newcount\@highpenalty
+\newcount\@hightab
+\newbox\@holdpg
 \newinsert \@kludgeins
-\newcount\@lastchclass							
-\newbox\@leftcolumn							
-\newbox\@linechar							
-\newdimen\@linelen							
-\newcount\@lowpenalty							
-\newdimen\@maxdepth							 
-\newcount\@medpenalty							
+\newcount\@lastchclass
+\newbox\@leftcolumn
+\newbox\@linechar
+\newdimen\@linelen
+\newcount\@lowpenalty
+\newdimen\@maxdepth
+\newcount\@medpenalty
 \newdimen\@mparbottom \@mparbottom\z@
-\newinsert\@mpfootins							 
-\newcount\@mplistdepth							
-\newcount\@multicnt							
-\newcount\@nxttabmar							
-\newbox\@outputbox							
-\newdimen\@pagedp							
-\newdimen\@pageht							
-\newbox\@picbox								
-\newdimen\@picht							
-\newdimen \@reqcolroom							
-\newskip\@rightskip \@rightskip \z@skip					
-\newcount\@savsf							
-\newdimen\@savsk							
-\newcount\@secpenalty							
+\newinsert\@mpfootins
+\newcount\@mplistdepth
+\newcount\@multicnt
+\newcount\@nxttabmar
+\newbox\@outputbox
+\newdimen\@pagedp
+\newdimen\@pageht
+\newbox\@picbox
+\newdimen\@picht
+\newdimen \@reqcolroom
+\newskip\@rightskip \@rightskip \z@skip
+\newcount\@savsf
+\newdimen\@savsk
+\newcount\@secpenalty
 \def\@sqrt[#1]{\root #1\of}
-\newbox\@tabfbox							
-\newcount\@tabpush							
-\newdimen \@textfloatsheight						
-\newdimen\@textmin							
-\newcount\@topnum							
-\newdimen\@toproom							
-\newcount\@xarg								
-\newdimen\@xdim								
-\newcount\@yarg								
-\newdimen\@ydim								
-\newcount\@yyarg							
+\newbox\@tabfbox
+\newcount\@tabpush
+\newdimen \@textfloatsheight
+\newdimen\@textmin
+\newcount\@topnum
+\newdimen\@toproom
+\newcount\@xarg
+\newdimen\@xdim
+\newcount\@yarg
+\newdimen\@ydim
+\newcount\@yyarg
 \newtoks\every@math@size
-\newif \if@fcolmade							 
-\newdimen\lower@bound							
-\newcount\par@deathcycles						 
-\newdimen\upper@bound							
+\newif \if@fcolmade
+\newdimen\lower@bound
+\newcount\par@deathcycles
+\newdimen\upper@bound
 \newif\if@insert
 \newif\if@colmade
 \newif\if@specialpage   \@specialpagefalse
@@ -4486,6 +4495,8 @@ DefMacroI('\@charrb',        undef, T_LETTER('}'));
 
 DefMacroI('\check@mathfonts', undef, Tokens());
 DefMacro('\fontsize{}{}', Tokens());
+# https://tex.stackexchange.com/questions/112492/setfontsize-vs-fontsize#112501
+DefMacro('\@setfontsize{}{}{}', Tokens());
 
 DefMacroI('\defaultscriptratio',       undef, '.7');
 DefMacroI('\defaultscriptscriptratio', undef, '.5');
